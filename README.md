@@ -34,9 +34,9 @@ Nach dem Start zeigt Fileder das Hauptmenü:
 
 ```
     ╔═══════════════════════════════════════════════════╗
-    ║                  FILEDER v1.0                     ║
-    ║      Spürt Textketten in allen Dateien auf        ║
-    ║          © 2025 Simon Gutjahr                     ║
+    ║              FILEfinDER - filder v1.0             ║
+    ║         Spürt Textketten in Dateien auf           ║
+    ║              © 2025 Simon Gutjahr                 ║
     ╚═══════════════════════════════════════════════════╝
 
     1. Dateien nach Textkette durchsuchen
