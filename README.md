@@ -1,9 +1,9 @@
-# Fileder - Textkettensuche in Dateien und Archiven
+# FILEfinDER - Textkettensuche in Dateien und Archiven
 
 ![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)
 ![Python: 3.6+](https://img.shields.io/badge/Python-3.6+-blue.svg)
 
-**Fileder** ist ein leistungsstarkes Python-Tool zur Suche nach Textketten in Dateien und Archiven. Es durchsucht Verzeichnisse und Archive nach bestimmten Textketten und gibt die gefundenen Übereinstimmungen mit Kontext übersichtlich aus.
+**FILEfinDER** ist ein leistungsstarkes Python-Tool zur Suche nach Textketten in Dateien und Archiven. Es durchsucht Verzeichnisse und Archive nach bestimmten Textketten und gibt die gefundenen Übereinstimmungen mit Kontext übersichtlich aus.
 
 **Beta - work in progress**
 
