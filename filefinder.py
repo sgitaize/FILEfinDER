@@ -105,8 +105,9 @@ DEFAULT_CONFIG = {
     }
 }
 
-CONFIG_FILE = "fileder_config.ini"
-LOG_FILE = "fileder.log"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(script_dir, "fileder.log")
+CONFIG_FILE = os.path.join(script_dir, "fileder_config.ini")
 
 # Logger einrichten
 logger = logging.getLogger("Fileder")
@@ -1304,96 +1305,99 @@ class Fileder:
         
         return results, stats
 
-def format_results(self, results):
-    """Formatiert die Suchergebnisse für die Anzeige."""
-    if not results:
-        return "Keine Ergebnisse gefunden."
-    
-    formatted_results = []
-    for result in results:
-        file_path = result['file']
-        line_number = result['line_number']
-        context = result['context']
+    def format_results(self, results):
+        """Formatiert die Suchergebnisse für die Anzeige."""
+        if not results:
+            return "Keine Ergebnisse gefunden."
         
-        if result['is_binary']:
-            line_info = "Binärdaten"
-            # Begrenzen der Länge für Binärdaten
-            if len(context) > 60:
-                context = f"Position {result['position']}: {context[:60]}..."
+        formatted_results = []
+        for result in results:
+            file_path = result['file']
+            line_number = result['line_number']
+            context = result['context']
+            
+            if result['is_binary']:
+                line_info = "Binärdaten"
+                # Begrenzen der Länge für Binärdaten
+                if len(context) > 60:
+                    context = f"Position {result['position']}: {context[:60]}..."
+                else:
+                    context = f"Position {result['position']}: {context}"
             else:
-                context = f"Position {result['position']}: {context}"
-        else:
-            line_info = f"Zeile {line_number}"
-            # Highlight-Funktion, wenn aktiviert
-            if self.config["output"]["highlight_matches"] and colorama_available:
-                try:
-                    pattern_pos = result['position'] - max(0, result['position'] - self.config["general"]["context_chars"])
-                    pattern_len = len(context) - pattern_pos if pattern_pos + 20 > len(context) else 20
-                    if 0 <= pattern_pos < len(context) and pattern_pos + pattern_len <= len(context):
-                        context = (
-                            context[:pattern_pos] + 
-                            Fore.GREEN + context[pattern_pos:pattern_pos+pattern_len] + Style.RESET_ALL + 
-                            context[pattern_pos+pattern_len:]
-                        )
-                except:
-                    # Bei Fehler bei der Hervorhebung ohne Hervorhebung fortfahren
-                    pass
+                line_info = f"Zeile {line_number}"
+                # Highlight-Funktion, wenn aktiviert
+                if self.config["output"]["highlight_matches"] and colorama_available:
+                    try:
+                        pattern_pos = result['position'] - max(0, result['position'] - self.config["general"]["context_chars"])
+                        pattern_len = len(context) - pattern_pos if pattern_pos + 20 > len(context) else 20
+                        if 0 <= pattern_pos < len(context) and pattern_pos + pattern_len <= len(context):
+                            context = (
+                                context[:pattern_pos] + 
+                                Fore.GREEN + context[pattern_pos:pattern_pos+pattern_len] + Style.RESET_ALL + 
+                                context[pattern_pos+pattern_len:]
+                            )
+                    except:
+                        # Bei Fehler bei der Hervorhebung ohne Hervorhebung fortfahren
+                        pass
+            
+            formatted_results.append([file_path, line_info, context])
         
-        formatted_results.append([file_path, line_info, context])
-    
-    # Tabelle formatieren
-    return tabulate(formatted_results, headers=["Datei", "Position", "Kontext"], tablefmt="grid")
+        # Tabelle formatieren
+        return tabulate(formatted_results, headers=["Datei", "Position", "Kontext"], tablefmt="grid")
 
-def save_results(self, results, stats, search_pattern, directory):
-    """Speichert die Suchergebnisse in eine Datei."""
-    if not self.config["output"]["save_results"]:
-        return None
-    
-    # Ergebnisverzeichnis erstellen
-    results_dir = self.config["output"]["results_folder"]
-    try:
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
-    except Exception as e:
-        logger.error(f"Fehler beim Erstellen des Ergebnisverzeichnisses: {e}")
-        return None
-    
-    # Dateiname generieren
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_pattern = re.sub(r'[^\w]', '_', search_pattern)
-    if len(safe_pattern) > 20:
-        safe_pattern = safe_pattern[:20]
-    
-    results_file = os.path.join(results_dir, f"search_{safe_pattern}_{timestamp}.json")
-    
-    # Ergebnisse speichern
-    try:
-        with open(results_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                'search_pattern': search_pattern,
-                'directory': directory,
-                'timestamp': timestamp,
-                'stats': stats,
-                'results': results
-            }, f, ensure_ascii=False, indent=2)
+    def save_results(self, results, stats, search_pattern, directory):
+        """Speichert die Suchergebnisse in eine Datei."""
+        if not self.config["output"]["save_results"]:
+            return None
         
-        logger.info(f"Ergebnisse gespeichert in: {results_file}")
-        return results_file
-    except Exception as e:
-        logger.error(f"Fehler beim Speichern der Ergebnisse: {e}")
-        return None
+        # Ergebnisverzeichnis erstellen
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        results_dir = os.path.join(script_dir, self.config["output"]["results_folder"])
+        try:
+            if not os.path.exists(results_dir):
+                os.makedirs(results_dir)
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen des Ergebnisverzeichnisses: {e}")
+            return None
+        
+        # Dateiname generieren
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_pattern = re.sub(r'[^\w]', '_', search_pattern)
+        if len(safe_pattern) > 20:
+            safe_pattern = safe_pattern[:20]
+        
+        results_file = os.path.join(results_dir, f"search_{safe_pattern}_{timestamp}.json")
+        
+        # Ergebnisse speichern
+        try:
+            with open(results_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'search_pattern': search_pattern,
+                    'directory': directory,
+                    'timestamp': timestamp,
+                    'stats': stats,
+                    'results': results
+                }, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"Ergebnisse gespeichert in: {results_file}")
+            return results_file
+        except Exception as e:
+            logger.error(f"Fehler beim Speichern der Ergebnisse: {e}")
+            return None
 
-def load_results(self, results_file):
-    """Lädt gespeicherte Suchergebnisse."""
-    try:
-        with open(results_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        logger.info(f"Ergebnisse geladen aus: {results_file}")
-        return data.get('results', []), data.get('stats', {}), data.get('search_pattern', ''), data.get('directory', '')
-    except Exception as e:
-        logger.error(f"Fehler beim Laden der Ergebnisse: {e}")
-        return [], {}, '', ''
+    def load_results(self, results_file):
+        """Lädt gespeicherte Suchergebnisse."""
+        try:
+            with open(results_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            logger.info(f"Ergebnisse geladen aus: {results_file}")
+            return data.get('results', []), data.get('stats', {}), data.get('search_pattern', ''), data.get('directory', '')
+        except Exception as e:
+            logger.error(f"Fehler beim Laden der Ergebnisse: {e}")
+            return [], {}, '', ''
+
+
 
 
 #############################################
@@ -1620,7 +1624,15 @@ def search_archives(finder):
 
 def load_saved_results(finder):
     """Lädt gespeicherte Suchergebnisse."""
-    results_dir = finder.config["output"]["results_folder"]
+    # Pfad des aktuellen Skripts
+    script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
+
+    # results_folder aus der Konfiguration (z. B. "search_results")
+    results_dir_name = finder.config["output"]["results_folder"]
+
+    # Vollständiger Pfad zum Ergebnisverzeichnis im Skriptverzeichnis
+    results_dir = os.path.join(script_dir, results_dir_name)
+
     if not os.path.exists(results_dir):
         print(Fore.RED + f"    Ergebnisverzeichnis nicht gefunden: {results_dir}" + Style.RESET_ALL)
         return
@@ -1642,7 +1654,9 @@ def load_saved_results(finder):
             print(Fore.RED + "    Ungültige Auswahl!" + Style.RESET_ALL)
             return
         
-        selected_file = os.path.join(results_dir, results_files[choice-1])
+        # Vollständiger Pfad zur gewählten Datei
+        selected_file = os.path.join(results_dir, results_files[choice - 1])
+
         results, stats, pattern, directory = finder.load_results(selected_file)
         
         print("\n" + finder.format_results(results))
@@ -1667,6 +1681,7 @@ def load_saved_results(finder):
         print(Fore.RED + "    Ungültige Eingabe! Bitte geben Sie eine Zahl ein." + Style.RESET_ALL)
     except Exception as e:
         print(Fore.RED + f"    Fehler beim Laden der Ergebnisse: {e}" + Style.RESET_ALL)
+
 
 def show_system_info(finder):
     """Zeigt System-Informationen an."""
@@ -1814,5 +1829,12 @@ def main():
             print(Fore.YELLOW + "    Das Programm versucht, weiterzulaufen." + Style.RESET_ALL)
             input("\n    Drücken Sie Enter, um fortzufahren...")
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(Fore.YELLOW + "\n\n    Programm durch Benutzer beendet." + Style.RESET_ALL)
+    except Exception as e:
+        logger.critical(f"Unbehandelter Fehler: {e}")
+        print(Fore.RED + f"\n\n    Unbehandelter Fehler: {e}" + Style.RESET_ALL)
+        print(f"    Details finden Sie in der Logdatei: {LOG_FILE}")
