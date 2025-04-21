@@ -5,6 +5,8 @@
 
 **Fileder** ist ein leistungsstarkes Python-Tool zur Suche nach Textketten in Dateien und Archiven. Es durchsucht Verzeichnisse und Archive nach bestimmten Textketten und gibt die gefundenen Übereinstimmungen mit Kontext übersichtlich aus.
 
+**Beta - work in progress**
+
 ## Funktionen
 
 - **Durchsuchen von Dateien und Verzeichnissen** nach spezifischen Textketten
