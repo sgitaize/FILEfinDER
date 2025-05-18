@@ -22,6 +22,7 @@ import time
 import logging
 import platform
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed  # <--- NEU für Multithreading
 
 # Optionale Imports - werden später überprüft und bei Bedarf installiert
 try:
@@ -659,6 +660,8 @@ class Fileder:
         self.has_gzip = gzip_available
         self.has_tarfile = tarfile_available
         
+        self.max_threads = min(32, (os.cpu_count() or 4) * 2)  # Standardwert für Threadpool
+
         self.setup_logging()
     
     def setup_logging(self):
@@ -965,50 +968,37 @@ class Fileder:
         return results
     
     def search_in_directory(self, directory, pattern, case_sensitive=False, recursive=True):
-        """Durchsucht ein Verzeichnis nach Dateien, die das Muster enthalten."""
-        # Fortschritts-Tracker initialisieren
+        """Durchsucht ein Verzeichnis nach Dateien, die das Muster enthalten (Multi-Threaded)."""
         progress = ProgressTracker()
-        
-        # Retry-Handler initialisieren
         retry_handler = RetryHandler(timeout_seconds=self.config["general"]["timeout_seconds"])
-        
-        # Ergebnisse und Fehler zählen
         results = []
         errors = 0
-        
-        # Normalisierter Pfad
         directory = os.path.normpath(directory)
-        
-        # Prüfen, ob Verzeichnis existiert
+
         if not os.path.isdir(directory):
             logger.error(f"Verzeichnis existiert nicht: {directory}")
             progress.increment_dirs_skipped()
             stats = progress.get_stats()
             stats['errors'] = 1
             return results, stats
-        
-        # Verzeichnisebenen verfolgen
+
+        # ThreadPoolExecutor für parallele Dateisuche
         def traverse_dir(current_dir, current_depth=0):
             nonlocal results, errors
-            
-            # Max. Tiefe prüfen
+
             max_depth = int(self.config["filters"]["max_depth"])
             if max_depth > 0 and current_depth > max_depth:
                 logger.debug(f"Maximale Tiefe erreicht ({max_depth}), überspringe {current_dir}")
                 progress.increment_dirs_skipped()
                 return
-            
-            # Prüfen, ob wir auf das Verzeichnis zugreifen können
+
             if not retry_handler.handle_directory_access(current_dir):
-                # Wenn nicht, überspringen und Statistik aktualisieren
                 progress.increment_dirs_skipped()
                 return
-            
-            # Aktuelles Verzeichnis im Fortschritts-Tracker aktualisieren
+
             progress.update_current_directory(current_dir)
-            
+
             try:
-                # Verzeichnisinhalt sicher abrufen
                 try:
                     entries = list(os.scandir(current_dir))
                 except PermissionError:
@@ -1020,61 +1010,53 @@ class Fileder:
                     progress.increment_dirs_skipped()
                     errors += 1
                     return
-                
-                # Dateien im Verzeichnis durchlaufen
-                for entry in entries:
-                    # Globales Timeout prüfen
-                    if self.config["general"]["timeout_seconds"] > 0 and \
-                            time.time() - progress.start_time > self.config["general"]["timeout_seconds"] * 10:  # Längeres Timeout für gesamte Suche
-                        logger.warning(f"Globale Zeitüberschreitung nach {self.config['general']['timeout_seconds'] * 10} Sekunden")
-                        return
-                    
-                    try:
-                        # Ist es eine Datei?
-                        if entry.is_file():
-                            # Bei Bedarf Datei überspringen
-                            if not self.should_process_file(entry.path):
-                                progress.increment_files_skipped()
-                                continue
-                            
-                            # Datei durchsuchen
-                            file_results = self.search_in_file(entry.path, pattern, case_sensitive)
-                            if file_results:
-                                results.extend(file_results)
-                                progress.increment_matches_found(len(file_results))
-                            
-                            # Fortschritt aktualisieren
+
+                # Dateien und Verzeichnisse trennen
+                files = [entry for entry in entries if entry.is_file()]
+                dirs = [entry for entry in entries if entry.is_dir()]
+
+                # Multi-Threaded Suche in Dateien
+                file_results = []
+                with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+                    future_to_file = {
+                        executor.submit(self.search_in_file, entry.path, pattern, case_sensitive): entry.path
+                        for entry in files if self.should_process_file(entry.path)
+                    }
+                    for future in as_completed(future_to_file):
+                        entry_path = future_to_file[future]
+                        try:
+                            res = future.result()
+                            if res:
+                                file_results.extend(res)
+                                progress.increment_matches_found(len(res))
                             progress.increment_files_searched()
-                        
-                        # Ist es ein Verzeichnis und sollen wir rekursiv suchen?
-                        elif entry.is_dir() and recursive:
-                            # Versteckte Verzeichnisse überspringen, wenn konfiguriert
-                            dir_name = os.path.basename(entry.path)
-                            if not dir_name.startswith('.') or self.config["general"]["search_hidden_files"]:
-                                traverse_dir(entry.path, current_depth + 1)
-                    except Exception as e:
-                        logger.error(f"Fehler bei der Verarbeitung von {entry.path}: {e}")
-                        errors += 1
-                        if entry.is_file():
+                        except Exception as e:
+                            logger.error(f"Fehler bei der Verarbeitung von {entry_path}: {e}")
+                            errors += 1
                             progress.increment_files_skipped()
-                        else:
-                            progress.increment_dirs_skipped()
-            
+
+                results.extend(file_results)
+
+                # Übersprungene Dateien zählen
+                skipped_files = len([entry for entry in files if not self.should_process_file(entry.path)])
+                if skipped_files:
+                    progress.increment_files_skipped(skipped_files)
+
+                # Rekursiv in Verzeichnisse gehen (sequenziell, um Thread-Explosion zu vermeiden)
+                for entry in dirs:
+                    dir_name = os.path.basename(entry.path)
+                    if not dir_name.startswith('.') or self.config["general"]["search_hidden_files"]:
+                        traverse_dir(entry.path, current_depth + 1)
+
             except Exception as e:
                 logger.error(f"Unerwarteter Fehler beim Durchsuchen des Verzeichnisses {current_dir}: {e}")
                 errors += 1
                 progress.increment_dirs_skipped()
-        
-        # Suche starten
+
         traverse_dir(directory)
-        
-        # Finale Statistik
         stats = progress.get_stats()
         stats['errors'] = errors
-        
-        # Fortschrittsanzeige abschließen
-        print("\r" + " " * 80, end="\r")  # Zeile löschen
-        
+        print("\r" + " " * 80, end="\r")
         return results, stats
 
     def extract_archived_file(self, archive_path, extract_dir):
